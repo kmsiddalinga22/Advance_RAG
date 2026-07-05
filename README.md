@@ -170,17 +170,11 @@ Starts the Langflow server on `http://localhost:7860`. Open the flow, click **Pl
 3. Open the **Playground**, type a question, and press **Ask**.
 4. Review the answer — expand the build results on the **Cohere Rerank** and **Astra DB** nodes to inspect exactly which chunks were retrieved and reranked for that answer.
 
-![Theory](Flow_ScreenShot/Theory.png)
-*Reference material describing what Advanced RAG adds over a naive pipeline: HyDE, semantic chunking, reranking.*
+![Ingestion pipeline](Flow_ScreenShot/Injestion_LangFlow_Diagram.png)
+*The actual ingestion side of the built flow: Read File (`velocart_platform_docs.pdf`, 7.57 KB) → Type Convert (Message → JSON) → Semantic Text Splitter (`percentile` threshold, amount `0.5`, target `5` chunks) → Ollama Embeddings (`nomic-embed-text:latest`) → Astra DB (database `AIGenRAG`, collection `testcasegen_ollama`).*
 
-![Diagram](Flow_ScreenShot/Diagram.png)
-*Reference architecture diagram this flow was built from.*
-
-![Langflow steps](Flow_ScreenShot/Lang_Flow.png)
-*Reference build steps used as the starting point for the actual Langflow flow.*
-
-![QA Testing](Flow_ScreenShot/QA_Testing.png)
-*QA test scenario checklist used to validate this flow (T01–T05, see Testing Findings below).*
+![Retrieval and generation pipeline](Flow_ScreenShot/Retrieval_Rerank_Generation_LangFlow_Diagram.png)
+*The actual retrieval + generation side, grouped by stage exactly as designed: **Pre-retrieval (HyDE)** — Chat Input → HyDE Prompt → Language Model (`llama3.2:latest`) → Astra DB search (k=20); **Post-retrieval (rerank)** — Cohere Rerank (`rerank-english-v3.0`, ~1.6s) → Parser (Stringify mode) → Answer Prompt; **Answer generation** — Language Model (`gemini-3.5-flash`, ~10.1s) → Chat Output. Per-node timings visible here are useful reference points for the T03 latency test.*
 
 ## Input Format
 
@@ -221,10 +215,8 @@ Any document Langflow's **Read File** component supports (PDF, TXT, MD, CSV, DOC
 
 | File | Shows |
 |---|---|
-| `Flow_ScreenShot/Theory.png` | Conceptual explanation of Advanced RAG's additions over naive RAG |
-| `Flow_ScreenShot/Diagram.png` | Reference pipeline diagram (HyDE → embed → vector store → rerank → answer) |
-| `Flow_ScreenShot/Lang_Flow.png` | Reference step-by-step Langflow build instructions |
-| `Flow_ScreenShot/QA_Testing.png` | QA test scenario definitions (T01–T05) |
+| `Flow_ScreenShot/Injestion_LangFlow_Diagram.png` | The actual built ingestion pipeline: Read File → Type Convert → Semantic Text Splitter → Astra DB, with real node configuration values visible |
+| `Flow_ScreenShot/Retrieval_Rerank_Generation_LangFlow_Diagram.png` | The actual built retrieval + generation pipeline, grouped by stage: Pre-retrieval (HyDE), Post-retrieval (rerank), Answer generation — with real model names and per-node timings visible |
 
 ## API Reference
 
@@ -258,10 +250,8 @@ Advanced_RAG/
 ├── sample_docs/
 │   └── velocart_platform_docs.pdf     # test document used for all QA scenarios
 └── Flow_ScreenShot/
-    ├── Theory.png                     # reference: what Advanced RAG adds
-    ├── Diagram.png                    # reference: pipeline architecture
-    ├── Lang_Flow.png                  # reference: build steps
-    └── QA_Testing.png                 # reference: QA test scenarios
+    ├── Injestion_LangFlow_Diagram.png                    # actual built ingestion pipeline
+    └── Retrieval_Rerank_Generation_LangFlow_Diagram.png  # actual built retrieval/rerank/answer pipeline
 ```
 
 ## Team Adoption Checklist
