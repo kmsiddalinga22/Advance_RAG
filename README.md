@@ -293,13 +293,9 @@ Fix: Use a fresh Astra collection name whenever the embedding provider or model 
 Cause: the ingestion-side Astra DB node is still wired into the live query path, so every chat message silently re-triggers ingestion — and Astra's duplicate-detection can fail to catch re-ingested identical text (each `Data` object gets a fresh timestamp, defeating equality-based dedup).
 Fix: Ensure the ingest Astra DB node is only reachable via a manual "ingest" trigger, not via any path that also leads to Chat Output.
 
-### Testing Findings (from T01–T05 QA runs — full detail in `advanced_rag_langflow_guide.md`)
+### Testing Findings
 
-- **T01 (precision)** — ✅ Pass: reranking correctly isolated the relevant section (Account Lockout Policy) over similar-sounding adjacent sections.
-- **T02 (HyDE ambiguity)** — ⚠️ Initially failed silently on a deliberately ambiguous query (answered only one of two valid interpretations); fixed, and the same query now correctly identifies and answers both interpretations.
-- **T03 (latency)** — ℹ️ Measured real per-node timings: Cohere Rerank ~1.6s, Answer LLM ~10.1s, Chat Output ~0.3s — the answer-generation call dominates total latency, not reranking. A true with/without-rerank A/B is still needed to isolate reranking's specific cost.
-- **T04 (structured content)** — ✅ Pass with caveat: the pricing table survived intact with no cross-row contamination, but the semantic splitter's **Number of Chunks** is set to `5` for a 6-section document, which is under-segmenting (merging entire sections together) — this pass can't yet be fully credited to good semantic boundary detection until that's tuned and re-verified.
-- **T05 (parent-child retrieval)** — ⬜ Not implemented in this build.
+Full QA test scenarios (T01–T05), the exact queries used, real results, and the general RAG Testing Taxonomy are documented in **[`advanced_rag_langflow_guide.md` → QA Test Scenarios](advanced_rag_langflow_guide.md#qa-test-scenarios--advanced-rag)** — kept there as the single source of truth rather than duplicated here, since a summary copy in two places is exactly what caused the `top_n=4` vs `6` documentation drift found in this project.
 
 ## Related Modules
 
