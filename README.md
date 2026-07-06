@@ -83,7 +83,7 @@ Upload a document, ask a question in plain language, and get back an answer grou
 
 **Why Astra DB:** managed vector store with a REST Data API, avoiding self-hosted vector DB operations.
 
-**Why Cohere Rerank:** embedding similarity and true relevance aren't the same thing; a dedicated cross-encoder re-scoring pass measurably improves precision on queries where multiple candidate chunks look similar at the embedding level (see Troubleshooting → Testing Findings below).
+**Why Cohere Rerank:** embedding similarity and true relevance aren't the same thing; a dedicated cross-encoder re-scoring pass measurably improves precision on queries where multiple candidate chunks look similar at the embedding level (see Troubleshooting → QA Testing below).
 
 **Where the AI calls happen:** entirely inside the Langflow flow (`LangFlow_Export_JSON_File.json`) — there is no separate application backend in this project. The flow is invoked over HTTP:
 
@@ -293,12 +293,6 @@ Fix: Use a fresh Astra collection name whenever the embedding provider or model 
 Cause: the ingestion-side Astra DB node is still wired into the live query path, so every chat message silently re-triggers ingestion — and Astra's duplicate-detection can fail to catch re-ingested identical text (each `Data` object gets a fresh timestamp, defeating equality-based dedup).
 Fix: Ensure the ingest Astra DB node is only reachable via a manual "ingest" trigger, not via any path that also leads to Chat Output.
 
-### Testing Findings
+### QA Testing
 
-Full QA test scenarios (T01–T05), the exact queries used, real results, and the general RAG Testing Taxonomy are documented in **[`advanced_rag_langflow_guide.md` → QA Test Scenarios](advanced_rag_langflow_guide.md#qa-test-scenarios--advanced-rag)** — kept there as the single source of truth rather than duplicated here, since a summary copy in two places is exactly what caused the `top_n=4` vs `6` documentation drift found in this project.
-
-## Related Modules
-
-| Module | Description |
-|---|---|
-| `Naive_RAG` | The baseline single-pass RAG pipeline (no HyDE, no reranking, fixed-size chunking) this project improves on — see its guide for the Gotchas this build inherited and fixed. |
+Full QA test scenarios (T01–T05), the exact queries used, real results, and the general RAG Testing Taxonomy are documented in **[`advanced_rag_langflow_guide.md` → QA Testing](advanced_rag_langflow_guide.md#qa-testing)** — kept there as the single source of truth rather than duplicated here, since a summary copy in two places is exactly what caused the `top_n=4` vs `6` documentation drift found in this project.

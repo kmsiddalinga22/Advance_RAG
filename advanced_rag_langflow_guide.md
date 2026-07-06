@@ -119,7 +119,7 @@ Click **Play** → **Playground** → ask a question. Compare against Naive RAG 
 
 ---
 
-## QA Test Scenarios — Advanced RAG
+## QA Testing
 
 | ID | Scenario | Test query used | Result |
 |----|----------|------------------|--------|
