@@ -136,6 +136,8 @@ Click **Play** → **Playground** → ask a question. Compare against Naive RAG 
 | *"What happens if my payment fails?"* | Simple baseline — confirm the pipeline works at all | ✅ Pass — correctly surfaced Section 3.3 (grace period, retry schedule on days 1/3/6) |
 | *"What is the maximum file upload size for attachments?"* | Negative/hallucination test — nothing in the doc covers this | Not yet run — expected behavior is an explicit "I don't have that information," not an invented number |
 
+**Documentation-drift finding:** this guide originally specified Cohere Rerank's `top_n=4` (Section 2, per the reference design). Cross-checking against the actual exported flow (`LangFlow_Export_JSON_File.json`) found it configured to `top_n=6` instead — a real-world example of a config/documentation consistency test, and a reminder to verify against the live flow export rather than trusting build notes once a flow has been tuned post-build.
+
 ## RAG Testing Taxonomy (general reference)
 
 RAG testing differs from typical app testing because there are **two independent failure surfaces** — retrieval (did we find the right chunks?) and generation (did the model use them correctly?) — and a bug in either produces the same visible symptom: a wrong answer. Good RAG testing isolates *which* layer actually failed.

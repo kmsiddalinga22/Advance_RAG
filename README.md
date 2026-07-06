@@ -295,4 +295,4 @@ Fix: Ensure the ingest Astra DB node is only reachable via a manual "ingest" tri
 
 ### QA Testing
 
-Full QA test scenarios (T01–T05), the exact queries used, real results, and the general RAG Testing Taxonomy are documented in **[`advanced_rag_langflow_guide.md` → QA Testing](advanced_rag_langflow_guide.md#qa-testing)** — kept there as the single source of truth rather than duplicated here, since a summary copy in two places is exactly what caused the `top_n=4` vs `6` documentation drift found in this project.
+Full QA test scenarios (T01–T05), the exact queries used, real results, and the general RAG Testing Taxonomy are documented in **[`advanced_rag_langflow_guide.md` → QA Testing](advanced_rag_langflow_guide.md#qa-testing)**.
