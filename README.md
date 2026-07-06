@@ -1,4 +1,4 @@
-# Advance RAG
+# langflow-advanced-rag
 
 > Ask questions against your own documents and get grounded answers — with hypothetical-answer query expansion (HyDE), semantic chunking, and reranking to make retrieval more accurate than a basic RAG pipeline.
 
