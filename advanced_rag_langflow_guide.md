@@ -121,130 +121,43 @@ Click **Play** → **Playground** → ask a question. Compare against Naive RAG 
 
 ## QA Test Scenarios — Advanced RAG
 
-| ID | Scenario | What to verify |
-|----|----------|-----------------|
-| T01 | **Reranking precision test** | Run the same query with `k=4` (no rerank — temporarily bypass Cohere) vs `k=20` + rerank. The reranked version should surface more relevant chunks. |
-| T02 | **HyDE degradation test** | Try a deliberately vague/ambiguous query. Confirm HyDE's hypothetical guess doesn't drift so far semantically that retrieval gets *worse* than just embedding the raw question would have. |
-| T03 | **Reranking latency test** | Compare response time with vs without Cohere Rerank in the path. Expect roughly +200–500ms; confirm that's acceptable for your use case. |
-| T04 | **Semantic chunking edge cases** | Test with code snippets, tables, or mixed-language content. Verify the semantic splitter doesn't cut a code block or table row in half — a real risk since it isn't token-count-aware in the way `chunk_size` is. |
-| T05 | **Parent-child retrieval accuracy** | Not implemented in this build (no parent-document retriever component was added) — if you need this, it requires an additional pattern beyond what's here: storing child chunks for search but returning their parent document's full text. Flag as a follow-up if needed. |
+| ID | Scenario | Test query used | Result |
+|----|----------|------------------|--------|
+| T01 | **Reranking precision test** | *"How long until my account gets locked, and what unlocks it early?"* | ✅ **Pass.** Reranking correctly isolated Section 1.5 (Account Lockout Policy) — 5 consecutive failures, 15-minute lockout, early-unlock via password reset — over superficially similar security-adjacent noise (Login Flow, Session Timeout) that otherwise crowds the k=20 candidate pool. |
+| T02 | **HyDE degradation / ambiguous query test** | *"What happens after repeated failures?"* | ⚠️ **Initially failed, then fixed.** First run answered only the login-lockout interpretation, silently dropping the equally valid payment-failure interpretation (Section 3.3) — a retrieval bias issue, not hallucination (the content existed but never reached the model). After tuning, the same query correctly identified both interpretations and answered each with accurate details. |
+| T03 | **Reranking latency test** | *"What are the pricing tiers and how much do they cost?"* | ℹ️ **Measured, not yet compared against a no-rerank baseline.** Real per-node timings observed: Cohere Rerank ~1.6s, Answer Language Model ~10.1s (gemini-3.5-flash), Chat Output ~0.3s. Rerank itself is a small fraction of total latency here — the answer-generation LLM call dominates. Still need a true A/B (with vs. without Cohere Rerank in the path) to isolate reranking's specific cost. |
+| T04 | **Semantic chunking edge cases** | *"What are the pricing tiers and how much do they cost?"* | ✅ **Pass, with a caveat.** The pricing table (Section 3.2) came back with no cross-row contamination — no tier's price got paired with another tier's overage cost. Caveat: full-chunk inspection showed the semantic splitter is currently under-segmenting (merging entire adjacent sections into oversized chunks, likely because **Number of Chunks** is set to `5` for a 6-section document), so this pass can't yet be fully credited to *good* semantic boundary detection versus everything simply landing in one giant chunk together. Needs re-verification after chunking sensitivity is tuned. |
+| T05 | **Parent-child retrieval accuracy** | — | ⬜ **Not implemented.** No parent-document retriever component exists in this build. Would require storing child chunks for search while returning their parent document's full text — a distinct pattern beyond what's built here. |
 
+**Additional scenarios run (not part of the original T01–T05 set):**
 
-===========================
-1. Simple baseline (confirm it works at all):
+| Query | Purpose | Result |
+|---|---|---|
+| *"What happens if my payment fails?"* | Simple baseline — confirm the pipeline works at all | ✅ Pass — correctly surfaced Section 3.3 (grace period, retry schedule on days 1/3/6) |
+| *"What is the maximum file upload size for attachments?"* | Negative/hallucination test — nothing in the doc covers this | Not yet run — expected behavior is an explicit "I don't have that information," not an invented number |
 
+## RAG Testing Taxonomy (general reference)
 
-What happens if my payment fails?
-Should surface Section 3.3 (Failed Payment Handling — grace period, retry schedule).
+RAG testing differs from typical app testing because there are **two independent failure surfaces** — retrieval (did we find the right chunks?) and generation (did the model use them correctly?) — and a bug in either produces the same visible symptom: a wrong answer. Good RAG testing isolates *which* layer actually failed.
 
-2. Ambiguous query (tests T02 — HyDE degradation):
+### 1. Retrieval quality
+- **Precision test** — does it return the *right* chunks, not just *some* chunks? (T01 above)
+- **Recall test** — does it find *all* the relevant chunks? Naive RAG's "What are the login test cases?" returning only 4 of 10 real ones was a recall failure, fixed by raising `k` and adding an explicit "list everything" instruction.
 
+### 2. Query robustness
+- **Ambiguous query test** — does it handle a question with 2+ valid interpretations, or silently commit to one? (T02 above)
+- **Out-of-scope / negative test** — does it admit "I don't know" instead of hallucinating when the answer genuinely isn't in the document?
 
-What happens after repeated failures?
-This is deliberately vague — it could match Account Lockout Policy (login failures) or Failed Payment Handling (payment retries). Watch which one HyDE's hypothetical answer steers retrieval toward, and whether reranking corrects it if HyDE guesses wrong.
+### 3. Chunking integrity
+- **Structured content edge case** — do tables, code blocks, and lists survive chunking intact? (T04 above)
+- **Boundary/split test** — does content get lost between two adjacent chunks? Naive RAG's TC-LOGIN-002 fell into a gap neither chunk's overlap region covered — fixed by increasing `chunk_overlap`.
 
-3. Precision test (T01 — needs rerank to matter):
+### 4. Data hygiene
+- **Duplicate/ingestion test** — does re-running ingestion create duplicate vectors that skew retrieval? Found here: the same chunk appearing 5–7× in the k=20 candidate pool because the ingest node was still wired into the live query path — an infrastructure bug that silently poisons every other test until fixed.
+- **Embedding/dimension consistency test** — do ingestion-time and query-time embeddings use the same model/dimension? Naive RAG hit this directly switching from OpenAI to Gemini embeddings without resetting the collection — searches silently returned nothing, no error raised.
 
+### 5. Non-functional
+- **Latency test** — does an added step (reranking, HyDE) cost an acceptable amount of time? (T03 above)
+- **Consistency test** — does the same question asked twice return materially the same answer? LLM temperature and retrieval nondeterminism can make "worked when I tested it" different from "works reliably."
 
-How long until my account gets locked, and what unlocks it early?
-Tests whether reranking correctly prioritizes Section 1.5 (Account Lockout Policy) over superficially similar security-adjacent chunks (1.1 Login Flow, 1.3 Session Timeout) that would otherwise crowd the top-20.
-
-4. Structured content edge case (T04):
-
-
-What are the pricing tiers and how much do they cost?
-Checks whether the semantic splitter kept the pricing table (Section 3.2) intact as one coherent chunk instead of fragmenting it row-by-row.
-
-5. Something not in the doc at all (sanity check for hallucination):
-
-
-What is the maximum file upload size for attachments?
-Nothing in the doc covers this — the answer should say it doesn't have that information, not invent a number
-
-
-=============================
-
-Naive RAG (what you built first)
-
-Chat Input → Vector Store (k=4) → Parser → Prompt → LLM → Chat Output
-One retrieval pass: the raw user question is embedded and searched directly, no optimization.
-Fixed-size chunking: chunk_size=1000 / chunk_overlap=200 — splits by character count, ignoring meaning.
-No filtering: whatever top-k comes back from the vector store goes straight into the prompt, unranked beyond raw similarity score.
-Weakness we found empirically: ambiguous queries (like "What are the login test cases?" hitting only 4 of 10 real ones) or content split awkwardly across a fixed-size chunk boundary (TC-LOGIN-002 getting cut in half) — the pipeline has no mechanism to notice or correct either problem.
-Advanced RAG (what you just built)
-
-Chat Input → HyDE → Vector Store (k=20, over-fetch) → Cohere Rerank (→4) → Parser → Prompt → LLM → Chat Output
-Three additions, each targeting a specific Naive RAG weakness:
-
-HyDE (pre-retrieval): instead of embedding the raw question, an LLM first writes a hypothetical answer, and that gets embedded/searched instead. Hypothetical answers read more like the actual document content than a terse question does, so retrieval targets the right neighborhood in vector space more reliably — you saw this matter directly on the ambiguous "What happens after repeated failures?" query.
-Semantic chunking (pre-retrieval): splits on meaning-shifts instead of a fixed character count. In theory this keeps related ideas together and avoids the "cut mid-sentence" problem Naive RAG had — though we just found yours is currently too coarse (merging entire sections), which is its own new failure mode worth tuning.
-Reranking (post-retrieval): over-fetch 20 candidates, then use a dedicated cross-encoder model (Cohere) to re-score and keep only the best 4. This exists because embedding-similarity search and "actual relevance to this question" aren't the same thing — reranking is a second, more precise pass specifically to fix that gap.
-The honest trade-off
-Advanced RAG isn't strictly "better" — it's more components, more places to misconfigure, and slower/costlier per query (HyDE = one extra LLM call before you even retrieve; reranking = one extra API call after). It buys you real improvements on ambiguous or precision-sensitive queries, but only if every added piece is actually tuned correctly — as you just saw, a badly-tuned semantic splitter can introduce a new problem (oversized chunks) that Naive RAG's dumb-but-predictable fixed-size splitter never had.
-
-
-=======================
-
-Here's the concrete difference, grounded in what we actually built for each (not just textbook theory):
-
-Naive RAG (what you built first)
-
-Chat Input → Vector Store (k=4) → Parser → Prompt → LLM → Chat Output
-One retrieval pass: the raw user question is embedded and searched directly, no optimization.
-Fixed-size chunking: chunk_size=1000 / chunk_overlap=200 — splits by character count, ignoring meaning.
-No filtering: whatever top-k comes back from the vector store goes straight into the prompt, unranked beyond raw similarity score.
-Weakness we found empirically: ambiguous queries (like "What are the login test cases?" hitting only 4 of 10 real ones) or content split awkwardly across a fixed-size chunk boundary (TC-LOGIN-002 getting cut in half) — the pipeline has no mechanism to notice or correct either problem.
-Advanced RAG (what you just built)
-
-Chat Input → HyDE → Vector Store (k=20, over-fetch) → Cohere Rerank (→4) → Parser → Prompt → LLM → Chat Output
-Three additions, each targeting a specific Naive RAG weakness:
-
-HyDE (pre-retrieval): instead of embedding the raw question, an LLM first writes a hypothetical answer, and that gets embedded/searched instead. Hypothetical answers read more like the actual document content than a terse question does, so retrieval targets the right neighborhood in vector space more reliably — you saw this matter directly on the ambiguous "What happens after repeated failures?" query.
-Semantic chunking (pre-retrieval): splits on meaning-shifts instead of a fixed character count. In theory this keeps related ideas together and avoids the "cut mid-sentence" problem Naive RAG had — though we just found yours is currently too coarse (merging entire sections), which is its own new failure mode worth tuning.
-Reranking (post-retrieval): over-fetch 20 candidates, then use a dedicated cross-encoder model (Cohere) to re-score and keep only the best 4. This exists because embedding-similarity search and "actual relevance to this question" aren't the same thing — reranking is a second, more precise pass specifically to fix that gap.
-The honest trade-off
-Advanced RAG isn't strictly "better" — it's more components, more places to misconfigure, and slower/costlier per query (HyDE = one extra LLM call before you even retrieve; reranking = one extra API call after). It buys you real improvements on ambiguous or precision-sensitive queries, but only if every added piece is actually tuned correctly — as you just saw, a badly-tuned semantic splitter can introduce a new problem (oversized chunks) that Naive RAG's dumb-but-predictable fixed-size splitter never had.
-
-I need to learn testing of RAG concepts and types/techniques like Ambiguous query ,Precision test ,Structured content edge case
-RAG testing is fundamentally different from typical app testing because there are two independent failure surfaces — retrieval (did we find the right chunks?) and generation (did the model use them correctly?) — and a bug in either one produces the same symptom (a wrong answer). Good RAG testing isolates which layer failed. Here's the taxonomy, grounded in what we actually hit this session:
-
-1. Retrieval quality tests
-Precision test — does the system return the right chunks, not just some chunks?
-
-What we did: "How long until my account gets locked, and what unlocks it early?" — passed, because reranking correctly isolated Section 1.5 despite similar-sounding noise (Login Flow, Session Timeout) in the candidate pool.
-How to design one: pick a document with 2-3 sections that are topically adjacent but factually distinct, then ask a question only one of them answers.
-Recall test — does it find all the relevant chunks, not just the first one it stumbles on?
-
-What we did: "What are the login test cases?" only returning 4 of 10 real ones (Naive RAG) — a recall failure, not a precision failure. Fixed by raising k and adding an explicit "list everything" instruction.
-2. Query robustness tests
-Ambiguous query test — does the system handle a question with 2+ valid interpretations?
-
-What we did: "What happens after repeated failures?" initially answered only the login-lockout interpretation, silently dropping the payment-failure interpretation. This is a retrieval bias failure, not hallucination — the content existed in the doc but never reached the model.
-How to design one: find or write a term that's genuinely overloaded in your domain ("failure," "timeout," "limit") and confirm both meanings are addressed or the ambiguity is at least surfaced.
-Out-of-scope / negative test — does it admit "I don't know" instead of hallucinating?
-
-What we planned but haven't run yet: asking about something absent from the doc entirely (e.g. "max file upload size") — the correct behavior is refusal, not invention.
-3. Chunking integrity tests
-Structured content edge case — do tables, code blocks, and lists survive chunking intact?
-
-What we did: the pricing tiers table came back with no cross-row contamination (Growth's price never got paired with Scale's overage) — a pass, though we couldn't fully attribute it to good chunking vs. accidentally landing inside an oversized merged chunk.
-How to design one: put a table or code block near a likely chunk boundary and ask a question that requires reading the whole structure — a single fragmented row/line means the splitter cut through it.
-Boundary/split test — does content get lost between two adjacent chunks?
-
-What we did: TC-LOGIN-002 in Naive RAG fell into a gap where neither chunk's overlap region fully covered it — the fix was increasing chunk_overlap.
-4. Data hygiene tests
-Duplicate/ingestion test — does re-running ingestion create duplicate vectors that skew retrieval?
-
-What we did: found Astra DB returning the same chunk 5-7× in the k=20 candidate pool, because the ingest node was still wired into the live query path. This is an infrastructure bug, not a model or prompt bug — worth checking early since it silently poisons every other test above.
-Embedding/dimension consistency test — do all embedding calls (ingestion-time and query-time) use the same model/dimension?
-
-What we did: hit this directly switching Naive RAG from OpenAI to Gemini embeddings without also resetting the collection — searches silently returned nothing, no error.
-5. Non-functional tests
-Latency test — does an added step (reranking, HyDE) cost an acceptable amount of time?
-
-Still on your list as T03 — worth actually timing it with vs. without reranking rather than guessing.
-Consistency test (not in your list yet, worth adding) — does the same question asked twice return materially the same answer? LLM temperature and retrieval nondeterminism can make "works when I tested it" not the same as "works reliably."
-
-The pattern across almost everything we found: the error message rarely tells you which layer actually failed. "List index out of range" turned out to be a missing wire, not a broken component. A "correct-looking" answer turned out to be lucky given an oversized chunk, not evidence of good chunking. The habit worth building is: whenever an answer looks wrong or suspiciously right, trace the actual retrieved chunks before trusting either verdict — exactly what we did with the /build events stream throughout this session.
-
-Want me to turn this into a saved reference doc in your project, or keep it as something you refer back to in this conversation?
+**The recurring pattern across nearly every issue found in this project:** the error message rarely names the actual failing layer. `list index out of range` turned out to be a missing wire, not a broken component. A correct-*looking* answer turned out to be lucky given an oversized merged chunk, not evidence of good chunking. The habit worth building: whenever an answer looks wrong *or* suspiciously right, trace the actual retrieved chunks before trusting either verdict.
